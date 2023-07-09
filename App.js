@@ -1,96 +1,109 @@
 import React, {useEffect, useState} from 'react';
 
-import { StyleSheet, Text, View, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import * as Location from 'expo-location';
-import { Fontisto } from '@expo/vector-icons'; 
+import { Ionicons } from '@expo/vector-icons'; 
+import { theme } from './colors'
 
-
-const API_KEY = '7b26c92417fd3678d52eac12dc870222' 
-// 405fd687120fd01f306cbe14b2e8baa4 내꺼 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const icons = {
-    Clear: "day-sunny",
-    Clouds: "cloudy",
-    Rain: "rain",
-    Atmosphere: "cloudy-gusts",
-    Snow: "snow",
-    Drizzle: "day-rain",
-    Thunderstorm: "lightning",  
-  };
+const STORAGE_KEY = "@todos"
 
 export default function App() {
 
-  const [ city, setCity ] = useState('Loading...');
-  const [ okay, setOkay ] = useState(true);
-  const [ forecasts, setForeCasts ] = useState([]);
-  
-  useEffect(()=> {
-    getWeather();
-  }, [])
+  const [working, setWorking] = useState(true);
+  const [text, setText] = useState('');
+  const [todos, setTodos] = useState({});
 
-  const getWeather = async() => {
-    const { granted } = await Location.requestForegroundPermissionsAsync();
+  useEffect(()=>{
+    loadTodos()
+  },[])
 
-    if(!granted) {
-      setOkay(false)
+  const travel = () => setWorking(false)
+  const work = () => setWorking(true)
+  const onChangeText = (payload) => setText(payload)
+  const loadTodos = async () => {
+    try{
+      const loadData = await AsyncStorage.getItem(STORAGE_KEY)
+      setTodos(JSON.parse(loadData))
+    } catch(e) {
+      throw e
+    }
+  }
+
+  const addTodo = async () => {
+    if(text === ""){
+      return
+    }
+    // const newTodos = Object.assign({}, todos, {[Date.now()]: {text, work: working}})
+    const newTodos = {
+      ...todos,
+      [Date.now()]: {text, working}
     }
 
-    const { coords: {latitude, longitude}} = await Location.getCurrentPositionAsync({accuracy: 5});
-    const address = await Location.reverseGeocodeAsync({latitude, longitude}, {useGoogleMaps: false});
+    setTodos(newTodos)
+    await saveTodos(newTodos)
+    setText("")
+    console.log(todos)
+  }
 
-    setCity(address[0].city)
+  const saveTodos = async (toSave) => {
+    try{
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+    } catch(e) {
+      throw e
+    }
+  }
 
-    // const response = await fetch(`https://api.openweathermap.org/data/2.5/onecall?lat=${latitude}&lon=${longitude}&exclude=alerts&appid=${API_KEY}`)
-    const response = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${latitude}&lon=${longitude}&appid=${API_KEY}&units=metric`);
-    const json = await response.json()
-
-    setForeCasts(
-      json.list.filter((weather) => {
-        if (weather.dt_txt.includes("12:00:00")) {
-          return weather;
-        }
-        })
-      );
+  const deleteTodos = (key) => {
+    Alert.alert(
+      `Delete ${todos[key].text}?`, 
+      "Are you Sure?",
+      [
+        { text: "cancel"},
+        { text: "I'm sure", 
+        style: "destructive",
+        onPress: async () => {
+          const newTodos = {...todos}
+          delete newTodos[key]
+      
+          setTodos(newTodos)
+          await saveTodos(newTodos)
+        }}
+      ]
+    )
   }
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <View style={styles.city}>
-        <Text style={styles.cityName}>{city}</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={work}>
+          <Text style={{...styles.btnText, color: working ? theme.white : theme.grey}}>Work</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={travel}>
+          <Text style={{...styles.btnText, color: !working ? theme.white : theme.grey}}>Travel</Text>
+        </TouchableOpacity>
       </View>
-      <View style={styles.weather}>
-        <ScrollView 
-          horizontal 
-          pagingEnabled 
-          persistentScrollbar 
-        >
-          { forecasts.length === 0 ? 
-            (<View style={{...styles.day, alignItems: 'center'}}>
-              <ActivityIndicator color='black' size='large' style={{marginTop: 10 }}/>
-            </View>)
-            : 
-            (forecasts.map((day, index) => 
-            <View key={index}>
-              <View style={styles.date}>
-                <Text style={styles.dateText}>{new Date(day.dt * 1000).toString().substring(0, 10)}</Text>
-              </View>
-              <View style={styles.day} >
-              <View style={styles.tempBox}>
-                <Text style={styles.temp}>{parseFloat(day.main.temp).toFixed(1)}</Text>
-                <Fontisto name={icons[day.weather[0].main]} size={45} color="white" />
-              </View>
-              <Text style={styles.desc}>{day.weather[0].main}</Text>
-              <Text style={styles.tinyDesc}>{day.weather[0].description}</Text>
-            </View>
-            </View>
-            ) )
-          }
-        </ScrollView>
+      <View>
+        <TextInput 
+          style={styles.input} 
+          value={text}
+          placeholder={working ? 'Add a Todo!' : 'Where do you go?'}
+          returnKeyType='done'
+          onChangeText={onChangeText}
+          onSubmitEditing={addTodo}
+        ></TextInput>
       </View>
-      
+      <ScrollView>
+        {Object.keys(todos).map(key => 
+          todos[key].working === working ? (
+          <View style={styles.todo} key={key}>
+            <Text style={styles.todoText}>{todos[key].text}</Text>
+            <TouchableOpacity onPress={() => deleteTodos(key)}><Ionicons name="trash-bin-outline" size={18} color="pink" /></TouchableOpacity>
+          </View>
+          ) : null
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -98,50 +111,40 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'lightpink'
-    
+    backgroundColor: theme.bg,
+    paddingHorizontal: 20,
   },
-  city: {
-    flex: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  cityName: {
-    fontSize: 56,
-    fontWeight: 500,
-  },
-  weather: {
-    flex: 2.5,
-  },
-  date: {
-    alignItems: 'center',
-  },
-  dateText: {
-    fontSize: 40,
-    fontWeight: 400,
-    color: 'white'
-  },
-  day: {
-    width: SCREEN_WIDTH,
-    alignItems: 'flex-start',
-    paddingHorizontal: 30,
-  },
-  tempBox: {
-    width: '100%',
+  header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    marginTop: 100
   },
-  temp: {
-    marginTop: 20,
-    fontSize: 100,
-    color: 'white'
+  btnText: {
+    fontSize: 38,
+    fontWeight: 600,
+    color: theme.white 
   },
-  desc: {
-    marginTop: -20,
-    fontSize: 50,
+  input: {
+    backgroundColor: 'white',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    marginVertical: 20,
+    fontSize: 18,
   },
-  tinyDesc: {
-    fontSize: 24,
+  todo: {
+    backgroundColor: theme.grey,
+    marginBottom: 10,
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    borderRadius: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  todoText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 500
   }
 });
